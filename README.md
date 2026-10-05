@@ -592,3 +592,34 @@ on:
 ## 开源许可
 
 见 [LICENSE](LICENSE)（若未随仓库提供，默认保留所有权利，使用前请先联系作者）。
+
+---
+
+## 更新日志
+
+### v1
+
+首个公开版本，对应上游 Fatbeans Creater V1.0.8 更新内容的落地实现。
+
+**新功能**
+
+- **转发器**：条件匹配的 TCP 包旁路转发到你配置的 API 地址，fire-and-forget 不影响正常流量
+- **自定义大模型接口**：新增 Anthropic 兼容模式（`/v1/messages` + `x-api-key` + `anthropic-version`）
+- **修改器改状态码**：HTTP 修改器规则「修改响应头」中可用 `:status` 修改响应状态码，支持区间随机取码
+
+**BUG 修复**
+
+- 抓包状态下右键发送 HTTP 请求时，不再覆盖原数据包会话（改为生成重发副本）
+- 修复 HTTP 修改器规则次数限制失效（改为按规则内容指纹记账，重开面板不清零）
+
+**优化**
+
+- 解码器面板增加专用解码器 GitHub 示例代码链接
+
+**其他**
+
+- 版本号改为递增式简写 `v1` / `v2` / `v3`，唯一来源为 `Zhuabao.Core/AppInfo.cs`
+- 内置四套自测：`--selftest` / `--enginetest` / `--proxytest` / `--uitest`
+- GitHub Actions 自动编译并发布到 Releases
+
+> 后续版本的更新内容会随 Release 一起发布，见 [Releases 页面](https://github.com/zhengwuji/zhua-bao/releases)。
