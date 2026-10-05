@@ -42,8 +42,11 @@ jobs:
           Write-Host "检测到版本号: $version"
           "version=$version" >> $env:GITHUB_OUTPUT
 
-      - name: 还原依赖
-        run: dotnet restore Zhuabao\Zhuabao.csproj
+      # 注意：restore 必须带上 -r win-x64，否则 project.assets.json 里不会有
+      # net8.0-windows/win-x64 目标，后续 publish --no-restore 会报
+      # "Assets file ... doesn't have a target for 'net8.0-windows/win-x64'"
+      - name: 还原依赖（含 win-x64 运行时目标）
+        run: dotnet restore Zhuabao\Zhuabao.csproj -r win-x64
 
       - name: 编译单文件免安装版
         run: dotnet publish Zhuabao\Zhuabao.csproj -c Release -r win-x64 --no-restore
@@ -59,6 +62,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $tmp | Out-Null
           Copy-Item $exe $tmp
           # 关掉系统代理接管/证书安装/API/MCP，避免在 CI 上产生副作用
+          # 字段名必须与 Zhuabao.Core\Config.cs 的 AppConfig 一致
           New-Item -ItemType Directory -Force -Path (Join-Path $tmp 'Config') | Out-Null
           @'
           {
@@ -66,7 +70,7 @@ jobs:
             "AutoInstallCert": false,
             "ApiEnabled": false,
             "McpEnabled": false,
-            "ListenPort": 8899
+            "Port": 8899
           }
           '@ | Set-Content -LiteralPath (Join-Path $tmp 'Config\config.json') -Encoding UTF8
           $p = Start-Process -FilePath (Join-Path $tmp 'ZhuabaoCreater.exe') `
