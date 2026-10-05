@@ -1,0 +1,79 @@
+# ============================================================
+# 抓包豆 Creator —— 仓库忽略规则
+#
+# 原则：仓库里**只放源码与文档**。
+# 一切构建产物、运行时数据、本机私有材料、上游参考程序一律不入库。
+# ============================================================
+
+# ---------- 构建产物 ----------
+bin/
+obj/
+[Dd]ebug/
+[Rr]elease/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+publish/
+
+# 单文件发布产物（由 CI 编译后作为 Release 附件分发，不入库）
+ZhuabaoCreater.exe
+ZhuabaoCreater.dll
+ZhuabaoCreater.pdb
+Zhuabao.Core.dll
+Zhuabao.Core.pdb
+
+# ---------- 运行时数据（含隐私）----------
+# 抓包会话存档：内含真实请求/响应，绝不能提交
+Capture/
+*.zb
+
+# 运行日志
+logs/
+*.log
+
+# 运行配置：可能含 WebHook 地址、大模型 API Key、转发目标地址
+Config/
+sysproxy-crash.mark
+
+# ---------- 证书与密钥（绝对禁止提交）----------
+*.pfx
+*.p12
+*.pvk
+*.key
+*.pem
+*.cer
+*.crt
+*.mobileconfig
+*rootCA*
+*RootCA*
+*.snk
+
+# ---------- 本机私有材料 ----------
+# 上游参考程序（Fatbeans Creater 官方发行版，非本仓库原创，不随仓库分发）
+FatbeansCreaterV1.0.8/
+FatbeansCreater*/
+
+# 发布压缩包与历史版本备份
+*.zip
+_backup/
+
+# 自动化测试报告（含本机注册表快照与路径）
+uitest-report.txt
+*-report.txt
+self-test-results.json
+ai-self-test-results.json
+
+# 本机临时脚本
+_*.ps1
+_*.txt
+
+# ---------- 编辑器 / 系统 ----------
+.vs/
+.idea/
+.vscode/
+*.swp
+*~
+Thumbs.db
+desktop.ini
+$RECYCLE.BIN/

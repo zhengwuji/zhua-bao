@@ -1,0 +1,131 @@
+name: Build and Release
+
+# 触发条件：
+#   1. 推送到 master 分支的任何代码改动都会自动编译 exe 并发布到 Releases
+#   2. 只改 README.md 不触发编译（按需求排除）
+#   3. 也可在 Actions 页面手动触发
+on:
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - 'README.md'
+  workflow_dispatch:
+
+# 发布 Release 需要写权限
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: 编译并发布 exe
+    runs-on: windows-latest
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      # 版本号唯一来源：Zhuabao.Core/AppInfo.cs 里的 Version 常量（v1 / v2 / v3 ...）
+      # 发版只需改这一个常量，工作流自动把它用作 Release 标签与附件文件名
+      - name: 读取版本号
+        id: ver
+        shell: pwsh
+        run: |
+          $src = Get-Content -LiteralPath 'Zhuabao.Core\AppInfo.cs' -Raw -Encoding UTF8
+          $m = [regex]::Match($src, 'public\s+const\s+string\s+Version\s*=\s*"([^"]+)"')
+          if (-not $m.Success) { throw 'AppInfo.cs 里找不到 Version 常量' }
+          $version = $m.Groups[1].Value
+          Write-Host "检测到版本号: $version"
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: 还原依赖
+        run: dotnet restore Zhuabao\Zhuabao.csproj
+
+      - name: 编译单文件免安装版
+        run: dotnet publish Zhuabao\Zhuabao.csproj -c Release -r win-x64 --no-restore
+
+      - name: 冒烟自测（失败则不发版）
+        shell: pwsh
+        run: |
+          $exe = 'Zhuabao\bin\Release\net8.0-windows\win-x64\publish\ZhuabaoCreater.exe'
+          if (-not (Test-Path $exe)) { throw "找不到编译产物: $exe" }
+          Write-Host "产物大小: $((Get-Item $exe).Length) 字节"
+          # 用干净临时目录跑，避免仓库内运行时数据干扰
+          $tmp = Join-Path $env:RUNNER_TEMP 'zhuabao-smoke'
+          New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+          Copy-Item $exe $tmp
+          # 关掉系统代理接管/证书安装/API/MCP，避免在 CI 上产生副作用
+          New-Item -ItemType Directory -Force -Path (Join-Path $tmp 'Config') | Out-Null
+          @'
+          {
+            "TakeOverSystemProxy": false,
+            "AutoInstallCert": false,
+            "ApiEnabled": false,
+            "McpEnabled": false,
+            "ListenPort": 8899
+          }
+          '@ | Set-Content -LiteralPath (Join-Path $tmp 'Config\config.json') -Encoding UTF8
+          $p = Start-Process -FilePath (Join-Path $tmp 'ZhuabaoCreater.exe') `
+                -ArgumentList '--selftest' -WorkingDirectory $tmp -Wait -PassThru -NoNewWindow
+          Write-Host "selftest 退出码: $($p.ExitCode)"
+          if ($p.ExitCode -ne 0) { throw "自测未通过（退出码 $($p.ExitCode)），停止发版" }
+
+      - name: 打包发布件
+        id: pack
+        shell: pwsh
+        run: |
+          $ver = '${{ steps.ver.outputs.version }}'
+          $pub = 'Zhuabao\bin\Release\net8.0-windows\win-x64\publish'
+          $stage = Join-Path $env:RUNNER_TEMP 'stage'
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item (Join-Path $pub 'ZhuabaoCreater.exe') $stage
+          if (Test-Path '使用说明.txt') { Copy-Item '使用说明.txt' $stage }
+          if (Test-Path 'README.md')    { Copy-Item 'README.md'    $stage }
+          $zip = "ZhuabaoCreater-$ver-win-x64.zip"
+          Compress-Archive -Path (Join-Path $stage '*') -DestinationPath $zip -Force
+          Write-Host "已打包: $zip  ($((Get-Item $zip).Length) 字节)"
+          "zip=$zip" >> $env:GITHUB_OUTPUT
+
+      - name: 发布到 Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: 抓包豆 Creator ${{ steps.ver.outputs.version }}
+          files: ${{ steps.pack.outputs.zip }}
+          draft: false
+          prerelease: false
+          body: |
+            ## 抓包豆 Creator ${{ steps.ver.outputs.version }}
+
+            > Windows 10/11 64 位 HTTP/HTTPS 抓包调试工具。下载下面的 zip，解压后双击 `ZhuabaoCreater.exe` 即可运行，**无需安装 .NET 运行时**。
+
+            ### 本次更新
+
+            - 对应上游 Fatbeans Creater V1.0.8 更新内容的落地版本
+            - 【新功能】新增**转发器**：条件匹配的 TCP 包旁路转发到你配置的 API 地址，不影响正常流量
+            - 【新功能】自定义大模型接口增加 **Anthropic 兼容模式**（`/v1/messages` + `x-api-key`）
+            - 【新功能】HTTP 修改器规则「修改响应头」中增加**修改状态码**功能（目标选 `:status`）
+            - 【BUG修复】抓包状态下右键发送 HTTP 请求时，**不再覆盖原数据包会话**（改为生成重发副本）
+            - 【BUG修复】修复「HTTP 修改器规则」的**次数限制失效**问题（改为按规则内容记账，重开面板不清零）
+            - 【优化】解码器面板增加**专用解码器 GitHub 示例代码链接**
+
+            ### 下载
+
+            | 文件 | 说明 |
+            |---|---|
+            | `${{ steps.pack.outputs.zip }}` | 免安装版（单文件自包含 exe + 使用说明 + README） |
+
+            ### 快速上手
+
+            1. 解压后双击 `ZhuabaoCreater.exe`
+            2. 点工具栏 **▶ 启动(F5)**（会自动接管系统代理，Edge/Chrome 免配置）
+            3. 按提示安装一次根证书，即可解密 HTTPS
+            4. 完整说明见仓库 [README](https://github.com/${{ github.repository }}#readme)
+
+            ### 校验值
+
+            本次构建由 GitHub Actions 在 `windows-latest` 上使用 .NET 8 SDK 自动编译，源码与本 Release 一一对应。
